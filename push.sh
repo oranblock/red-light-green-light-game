@@ -27,3 +27,6 @@ if ! git diff --staged --quiet; then
 else
   echo "ℹ️ No changes to commit."
 fi
+
+# Make sure script is executable
+chmod +x $0
