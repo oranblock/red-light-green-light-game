@@ -72,6 +72,7 @@ export function Camera() {
     
     // Debug mode - uncomment to see color detection values in console
     // const debugMode = true;
+    console.log(`Starting player tracking in ${phase} phase`);
 
     const trackPlayers = () => {
       try {
@@ -79,7 +80,7 @@ export function Camera() {
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const currentFrame = context.getImageData(0, 0, canvas.width, canvas.height);
 
-        // Track each player's position by their color
+        // Track each player's position by their color - track in ALL phases, not just MOVE/FREEZE
         players.forEach(player => {
           if (!player.active || player.eliminated) return;
 
@@ -90,10 +91,8 @@ export function Camera() {
           } */
           
           if (position) {
-            // Only update positions during active gameplay
-            if (phase === 'MOVE' || phase === 'FREEZE') {
-              updatePlayerPosition(player.id, position.x, position.y);
-            }
+            // Update positions in ANY phase, including SETUP
+            updatePlayerPosition(player.id, position.x, position.y);
           }
         });
 

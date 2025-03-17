@@ -266,14 +266,21 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     console.log("Starting game in SIMPLIFIED MODE - no eliminations");
     
-    // Reset player scores
-    const resetPlayers = get().players.map(player => ({
+    // Get the current players with their current positions
+    // This preserves tracked positions from SETUP phase
+    const currentPlayers = get().players;
+    
+    const resetPlayers = currentPlayers.map(player => ({
       ...player,
+      // Keep current positions intact
       score: 0,
       eliminated: false,
       active: true,
-      position: { x: 0, y: 0 },
-      lastPosition: { x: 0, y: 0 }
+      // Only reset positions if they're at 0,0
+      position: player.position.x === 0 && player.position.y === 0 
+        ? player.position
+        : player.position,
+      lastPosition: player.position
     }));
     
     // Get phase durations based on current difficulty
