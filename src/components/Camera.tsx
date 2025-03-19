@@ -171,9 +171,8 @@ export function Camera() {
     const height = imageData.height;
     const data = imageData.data;
     
-    let totalX = 0;
-    let totalY = 0;
-    let matchingPixels = 0;
+    // Store multiple color matches for a smarter detection algorithm
+    const colorMatches: { x: number, y: number, weight: number }[] = [];
     
     // Extract target color components
     const [targetR, targetG, targetB] = targetColor;
@@ -187,6 +186,7 @@ export function Camera() {
     // Check if the target color is bright
     const isTargetColorBright = (targetR + targetG + targetB) > 350;
     
+    // Scan the entire frame for matching colors
     for (let y = 0; y < height; y += sampleStep) {
       for (let x = 0; x < width; x += sampleStep) {
         const i = (y * width + x) * 4;
@@ -215,10 +215,8 @@ export function Camera() {
           // Use a weight based on how close the match is
           const weight = 1.0 - (distance / colorThreshold);
           
-          // Add to weighted average
-          totalX += x * weight;
-          totalY += y * weight;
-          matchingPixels++;
+          // Store this as a potential color match
+          colorMatches.push({ x, y, weight });
         }
       }
     }
@@ -226,10 +224,80 @@ export function Camera() {
     // Minimum pixels required for a good detection
     const minPixels = 5;
     
-    if (matchingPixels >= minPixels) {
+    // If we have enough matches, perform smart sensing
+    if (colorMatches.length >= minPixels) {
+      // Sort matches by weight (closest color match first)
+      colorMatches.sort((a, b) => b.weight - a.weight);
+      
+      // Find potential clusters by grouping nearby matches
+      const clusters: { x: number, y: number, count: number, totalWeight: number }[] = [];
+      
+      // Process each match to find or create clusters
+      colorMatches.forEach(match => {
+        // Look for an existing cluster this match might belong to
+        let foundCluster = false;
+        
+        for (const cluster of clusters) {
+          // Calculate distance to cluster center
+          const dist = Math.sqrt(
+            Math.pow(match.x - cluster.x, 2) + 
+            Math.pow(match.y - cluster.y, 2)
+          );
+          
+          // If match is close to this cluster, add it
+          if (dist < 50) { // 50px radius for clustering
+            // Update cluster center as a weighted average
+            const totalWeight = cluster.totalWeight + match.weight;
+            cluster.x = (cluster.x * cluster.totalWeight + match.x * match.weight) / totalWeight;
+            cluster.y = (cluster.y * cluster.totalWeight + match.y * match.weight) / totalWeight;
+            cluster.count++;
+            cluster.totalWeight = totalWeight;
+            foundCluster = true;
+            break;
+          }
+        }
+        
+        // If no matching cluster was found, start a new one
+        if (!foundCluster) {
+          clusters.push({
+            x: match.x,
+            y: match.y,
+            count: 1,
+            totalWeight: match.weight
+          });
+        }
+      });
+      
+      // Find the best cluster (most matches with highest weight)
+      if (clusters.length > 0) {
+        // Sort clusters by a combination of count and total weight
+        clusters.sort((a, b) => 
+          (b.count * b.totalWeight) - (a.count * a.totalWeight)
+        );
+        
+        // Return the center of the best cluster
+        return {
+          x: clusters[0].x,
+          y: clusters[0].y
+        };
+      }
+    }
+    
+    // Fallback to the old weighted average method if clustering didn't produce results
+    if (colorMatches.length >= minPixels) {
+      let totalX = 0;
+      let totalY = 0;
+      let totalWeight = 0;
+      
+      colorMatches.forEach(match => {
+        totalX += match.x * match.weight;
+        totalY += match.y * match.weight;
+        totalWeight += match.weight;
+      });
+      
       return {
-        x: totalX / matchingPixels,
-        y: totalY / matchingPixels
+        x: totalX / totalWeight,
+        y: totalY / totalWeight
       };
     }
     
