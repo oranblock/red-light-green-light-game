@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
-import { cn, calculateMotion, detectPlayerColor, getDefaultColorRanges, captureColorAt } from '../lib/utils';
+import { cn, calculateMotion } from '../lib/utils';
 
 export function Camera() {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -14,20 +14,28 @@ export function Camera() {
     players,
     difficulty,
     detectionThreshold,
+    playerColors,
     updatePlayerPosition,
     checkPlayerMovement,
     cameraReady,
     setCameraReady,
-    updateCustomColor,
-    addPlayer
+    updatePlayerColor
   } = useGameStore();
 
-  // Initialize camera
+  // Initialize camera with better persistence
   useEffect(() => {
     let stream: MediaStream | null = null;
 
     async function setupCamera() {
       try {
+        // Check if we already have a stream active
+        if (videoRef.current?.srcObject) {
+          console.log("Camera already initialized, reusing stream");
+          setCameraReady(true);
+          return;
+        }
+
+        console.log("Setting up camera...");
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { 
             width: 640, 
@@ -38,7 +46,12 @@ export function Camera() {
         
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(err => {
+            console.error("Error playing video:", err);
+          });
+          
           videoRef.current.onloadedmetadata = () => {
+            console.log("Camera metadata loaded");
             setCameraReady(true);
           };
         }
@@ -50,17 +63,24 @@ export function Camera() {
 
     setupCamera();
 
+    // Only clean up on component unmount, not during phase transitions
     return () => {
       if (stream) {
+        console.log("Stopping camera stream on component unmount");
         stream.getTracks().forEach(track => track.stop());
       }
-      setCameraReady(false);
     };
-  }, [setCameraReady]);
+  }, []); // Empty dependency array ensures this only runs once on mount
 
   // Player tracking and motion detection
   useEffect(() => {
-    if (!videoRef.current || !canvasRef.current || !cameraReady) return;
+    // Only run tracking if camera is ready
+    if (!videoRef.current || !canvasRef.current || !cameraReady) {
+      console.log("Camera or canvas not ready, can't start tracking");
+      return;
+    }
+
+    console.log(`Starting player tracking in ${phase} phase with ${players.length} players`);
 
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -68,67 +88,153 @@ export function Camera() {
     if (!context) return;
 
     let animationFrame: number;
-    const colorRanges = getDefaultColorRanges();
+    let frameCount = 0;
     
-    // Debug mode - uncomment to see color detection values in console
-    // const debugMode = true;
-    console.log(`Starting player tracking in ${phase} phase`);
-
     const trackPlayers = () => {
       try {
+        frameCount++;
+        
+        // Skip some frames for performance (process every 2 frames)
+        if (frameCount % 2 !== 0) {
+          animationFrame = requestAnimationFrame(trackPlayers);
+          return;
+        }
+        
         // Draw the current video frame to the canvas
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         const currentFrame = context.getImageData(0, 0, canvas.width, canvas.height);
 
-        // Track each player's position by their color - track in ALL phases, not just MOVE/FREEZE
-        players.forEach(player => {
-          if (!player.active || player.eliminated) return;
-
-          const position = detectPlayerColor(currentFrame, colorRanges, player.color);
+        // Track each player by their custom colors
+        for (const player of players) {
+          if (!player.active || player.eliminated) continue;
           
-          /* if (debugMode && position) {
-            console.log(`Player ${player.color} position:`, position);
-          } */
+          // Get this player's color
+          const playerColor = playerColors[player.id];
+          if (!playerColor) continue;
+          
+          // Find the position of this color in the frame
+          const position = findColorPosition(currentFrame, playerColor);
           
           if (position) {
-            // Update positions in ANY phase, including SETUP
+            // Update player positions in the store
             updatePlayerPosition(player.id, position.x, position.y);
-          }
-        });
-
-        // Store the current frame for next comparison (only during game)
-        if (phase === 'MOVE' || phase === 'FREEZE') {
-          previousFrameRef.current = currentFrame;
-          
-          // Only check player movement during FREEZE phase
-          if (phase === 'FREEZE') {
-            checkPlayerMovement();
+            
+            // Occasionally log position updates
+            if (frameCount % 60 === 0) {
+              console.log(`Player ${player.id} at (${Math.round(position.x)}, ${Math.round(position.y)})`);
+            }
           }
         }
 
-        // Continue tracking
+        // Store the current frame for next comparison (for motion detection)
+        if (phase === 'FREEZE') {
+          // Only check for movement during FREEZE phase
+          previousFrameRef.current = currentFrame;
+          checkPlayerMovement();
+        }
+
+        // Continue tracking loop
         animationFrame = requestAnimationFrame(trackPlayers);
       } catch (error) {
         console.error("Error in player tracking:", error);
-        // Recover gracefully by continuing loop
+        // Recover from errors by continuing the loop
         animationFrame = requestAnimationFrame(trackPlayers);
       }
     };
 
+    // Start the tracking loop
     trackPlayers();
+    console.log("Color tracking started");
 
+    // Clean up the animation frame on unmount or phase change
     return () => {
       cancelAnimationFrame(animationFrame);
+      console.log("Color tracking stopped");
     };
   }, [
-    phase, 
-    players, 
-    difficulty, 
-    detectionThreshold, 
+    players,
+    phase,
+    cameraReady,
     updatePlayerPosition,
     checkPlayerMovement,
-    cameraReady
+    difficulty, 
+    detectionThreshold,
+    playerColors
   ]);
+  
+  // Find a specific color in the frame
+  const findColorPosition = (
+    imageData: ImageData, 
+    targetColor: [number, number, number]
+  ): { x: number, y: number } | null => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+    
+    let totalX = 0;
+    let totalY = 0;
+    let matchingPixels = 0;
+    
+    // Extract target color components
+    const [targetR, targetG, targetB] = targetColor;
+    
+    // Color threshold - how close a pixel needs to be to match
+    const colorThreshold = 60;
+    
+    // Sample every Nth pixel for better performance
+    const sampleStep = 6;
+    
+    // Check if the target color is bright
+    const isTargetColorBright = (targetR + targetG + targetB) > 350;
+    
+    for (let y = 0; y < height; y += sampleStep) {
+      for (let x = 0; x < width; x += sampleStep) {
+        const i = (y * width + x) * 4;
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        
+        // Skip very dark pixels (likely background)
+        const brightness = r + g + b;
+        if (brightness < 80 && !isTargetColorBright) continue;
+        
+        // Calculate color difference using Euclidean distance
+        const diffR = r - targetR;
+        const diffG = g - targetG;
+        const diffB = b - targetB;
+        
+        // Use different channel weights to better match human perception
+        const distance = Math.sqrt(
+          (diffR * diffR * 0.3) + 
+          (diffG * diffG * 0.4) + 
+          (diffB * diffB * 0.3)
+        );
+        
+        // Calculate match quality (0-1)
+        if (distance < colorThreshold) {
+          // Use a weight based on how close the match is
+          const weight = 1.0 - (distance / colorThreshold);
+          
+          // Add to weighted average
+          totalX += x * weight;
+          totalY += y * weight;
+          matchingPixels++;
+        }
+      }
+    }
+    
+    // Minimum pixels required for a good detection
+    const minPixels = 5;
+    
+    if (matchingPixels >= minPixels) {
+      return {
+        x: totalX / matchingPixels,
+        y: totalY / matchingPixels
+      };
+    }
+    
+    return null;
+  };
   
   // Handle click on video for color capture
   const handleVideoClick = (e: React.MouseEvent<HTMLVideoElement>) => {
@@ -159,19 +265,67 @@ export function Camera() {
     const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
     
     // Capture the color
-    const [r, g, b] = captureColorAt(imageData, x, y);
-    
-    // Update the custom color in the store
-    updateCustomColor(r, g, b);
+    const capturedColor = captureColorAt(imageData, x, y);
     
     // Exit capture mode
     setCaptureMode(false);
     
-    // Add a custom player if none exists
-    if (!players.some(p => p.color === 'custom')) {
-      console.log("Adding custom player for color tracking");
-      addPlayer('custom' as any);
+    // Show a color picker for the user to select which player to update
+    if (players.length > 0) {
+      const selectedPlayer = window.prompt(`Found color: RGB(${capturedColor.join(', ')})\n\nEnter player ID to update:`);
+      
+      if (selectedPlayer && players.some(p => p.id === selectedPlayer)) {
+        updatePlayerColor(
+          selectedPlayer,
+          capturedColor[0],
+          capturedColor[1],
+          capturedColor[2]
+        );
+      }
     }
+  };
+  
+  // Helper to capture the average color around a point
+  const captureColorAt = (
+    imageData: ImageData,
+    x: number,
+    y: number,
+    sampleSize: number = 10
+  ): [number, number, number] => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+    
+    // Ensure coordinates are within bounds
+    x = Math.max(sampleSize, Math.min(width - sampleSize, x));
+    y = Math.max(sampleSize, Math.min(height - sampleSize, y));
+    
+    let totalR = 0;
+    let totalG = 0;
+    let totalB = 0;
+    let samplesCount = 0;
+    
+    // Sample pixels in a square around the point
+    for (let sy = y - sampleSize; sy < y + sampleSize; sy++) {
+      for (let sx = x - sampleSize; sx < x + sampleSize; sx++) {
+        if (sx >= 0 && sx < width && sy >= 0 && sy < height) {
+          const index = (sy * width + sx) * 4;
+          totalR += data[index];
+          totalG += data[index + 1];
+          totalB += data[index + 2];
+          samplesCount++;
+        }
+      }
+    }
+    
+    // Calculate averages
+    const avgR = Math.round(totalR / samplesCount);
+    const avgG = Math.round(totalG / samplesCount);
+    const avgB = Math.round(totalB / samplesCount);
+    
+    console.log(`Captured color: R=${avgR}, G=${avgG}, B=${avgB}`);
+    
+    return [avgR, avgG, avgB];
   };
 
   return (
@@ -235,10 +389,12 @@ export function Camera() {
         {players.map(player => {
           if (!player.active) return null;
           
+          const playerColor = playerColors[player.id] || [0, 0, 0];
+          
           const style = {
             left: `${(player.position.x / 640) * 100}%`,
             top: `${(player.position.y / 480) * 100}%`,
-            backgroundColor: player.color === 'custom' ? 'purple' : player.color
+            backgroundColor: `rgb(${playerColor[0]}, ${playerColor[1]}, ${playerColor[2]})`
           };
           
           return (

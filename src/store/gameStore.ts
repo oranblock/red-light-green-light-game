@@ -4,15 +4,12 @@ import { create } from 'zustand';
 type GamePhase = 'SETUP' | 'MOVE' | 'FREEZE' | 'GAME_OVER';
 
 // Difficulty levels
-type DifficultyLevel = 'easy' | 'medium' | 'hard';
-
-// Player colors
-export type PlayerColor = 'red' | 'green' | 'blue' | 'yellow';
+type DifficultyLevel = 'easy' | 'medium' | 'hard' | 'custom';
 
 // Player interface
 export interface Player {
   id: string;
-  color: PlayerColor | 'custom';
+  color: string;  // Now just the player ID, no longer using predefined colors
   active: boolean;
   score: number;
   position: {
@@ -38,6 +35,7 @@ interface GameState {
   cameraReady: boolean;
   detectionThreshold: number;
   customColorValues: [number, number, number];
+  playerColors: Record<string, [number, number, number]>; // Map of player IDs to RGB colors
   
   // Player management
   players: Player[];
@@ -57,8 +55,9 @@ interface GameState {
   // Actions
   setPhase: (phase: GamePhase) => void;
   setDifficulty: (level: DifficultyLevel) => void;
+  setDetectionThreshold: (threshold: number) => void;
   setCameraReady: (ready: boolean) => void;
-  addPlayer: (color: PlayerColor | 'custom') => void;
+  addPlayer: (id: string) => void;
   removePlayer: (id: string) => void;
   updatePlayerPosition: (id: string, x: number, y: number) => void;
   checkPlayerMovement: () => void;
@@ -72,6 +71,7 @@ interface GameState {
   updateTimer: () => void;
   determineLeader: () => void;
   updateCustomColor: (r: number, g: number, b: number) => void;
+  updatePlayerColor: (id: string, r: number, g: number, b: number) => void;
 }
 
 // Generate a unique ID
@@ -98,18 +98,33 @@ const getDetectionThreshold = (difficulty: DifficultyLevel): number => {
       return 30;  // Moderate sensitivity
     case 'hard':
       return 15;  // Still challenging but possible
+    case 'custom':
+      return 30;  // Custom difficulty uses direct threshold setting
     default:
       return 30;
   }
 };
 
-// Get phase durations based on difficulty - SIMPLIFIED FOR DEMO
+// Get phase durations based on difficulty
 const getPhaseDurations = (
   difficulty: DifficultyLevel
 ): { move: number; freeze: number } => {
-  // For now, make all phases the same regardless of difficulty
-  // This makes the cycle more predictable for testing
-  return { move: 5000, freeze: 5000 }; // 5 seconds each for easier testing
+  switch (difficulty) {
+    case 'easy':
+      return { move: 7000, freeze: 5000 };
+    case 'medium':
+      return { move: 5000, freeze: 5000 };
+    case 'hard':
+      return { move: 3000, freeze: 5000 };
+    case 'custom':
+      // For custom, we'll use the current values in the store
+      return { 
+        move: useGameStore.getState().moveDuration, 
+        freeze: useGameStore.getState().freezeDuration 
+      };
+    default:
+      return { move: 5000, freeze: 5000 };
+  }
 };
 
 export const useGameStore = create<GameState>((set, get) => ({
@@ -121,8 +136,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   maxRounds: 10,
   
   cameraReady: false,
-  detectionThreshold: 10,
-  customColorValues: [100, 100, 100],
+  detectionThreshold: 30,
+  customColorValues: [200, 50, 50], // Default to a brighter red
+  playerColors: {}, // Map of player IDs to RGB colors
   
   players: [],
   activePlayers: 0,
@@ -130,8 +146,8 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   timerActive: false,
   timeRemaining: 0,
-  freezeDuration: 4000,
-  moveDuration: 4000,
+  freezeDuration: 5000,
+  moveDuration: 5000,
   
   gameActive: false,
   winner: null,
@@ -147,27 +163,50 @@ export const useGameStore = create<GameState>((set, get) => ({
       moveDuration: move,
       freezeDuration: freeze
     });
+    
+    console.log(`Difficulty set to ${level}, detection threshold: ${getDetectionThreshold(level)}px`);
+    console.log(`Phase durations: Move=${move}ms, Freeze=${freeze}ms`);
+  },
+  
+  setDetectionThreshold: (threshold) => {
+    set({ detectionThreshold: threshold });
+    console.log(`Detection threshold directly set to ${threshold}px`);
   },
   
   setCameraReady: (ready) => set({ cameraReady: ready }),
   
-  addPlayer: (color) => {
-    const { players } = get();
+  addPlayer: (id) => {
+    const { players, playerColors } = get();
     
-    // Check if color is already taken
-    if (players.some(p => p.color === color)) {
+    // Check if player with this ID already exists
+    if (players.some(p => p.id === id)) {
+      console.log(`Player with ID ${id} already exists`);
       return;
     }
     
     const newPlayer: Player = {
-      id: generateId(),
-      color,
+      id,
+      color: id,  // Use the ID as the color reference
       active: true,
       score: 0,
       position: { x: 0, y: 0 },
       lastPosition: { x: 0, y: 0 },
       eliminated: false
     };
+    
+    // Generate a default color for the player if none exists
+    if (!playerColors[id]) {
+      // Default to a red color
+      const defaultColor: [number, number, number] = [200, 50, 50];
+      set({ 
+        playerColors: {
+          ...playerColors,
+          [id]: defaultColor
+        }
+      });
+    }
+    
+    console.log(`Added player with ID ${id}`);
     
     set({ 
       players: [...players, newPlayer],
@@ -176,14 +215,29 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   removePlayer: (id) => {
-    const { players, activePlayers } = get();
-    const player = players.find(p => p.id === id);
+    const { players, activePlayers, playerColors } = get();
+    const playerToRemove = players.find(p => p.id === id);
     
-    if (player && player.active) {
+    if (!playerToRemove) {
+      console.log(`No player with ID ${id} found to remove`);
+      return;
+    }
+    
+    // Update active players count if needed
+    if (playerToRemove.active) {
       set({ activePlayers: activePlayers - 1 });
     }
     
-    set({ players: players.filter(p => p.id !== id) });
+    // Create a new playerColors object without this player
+    const newPlayerColors = { ...playerColors };
+    delete newPlayerColors[id];
+    
+    set({ 
+      players: players.filter(p => p.id !== id),
+      playerColors: newPlayerColors
+    });
+    
+    console.log(`Removed player with ID ${id}`);
     get().determineLeader();
   },
   
@@ -196,25 +250,28 @@ export const useGameStore = create<GameState>((set, get) => ({
     const updatedPlayers = [...players];
     const currentPlayer = updatedPlayers[playerIndex];
     
-    // Make sure we're tracking position properly for movement detection
+    // Update positions differently based on phase
     if (phase === 'MOVE') {
-      // During MOVE phase, continuously update position and keep a reference to the last position
-      // Only very occasionally log positions to avoid console spam
-      if (Math.random() < 0.001) {
-        console.log(`Player ${currentPlayer.color} at position: (${x}, ${y})`);
-      }
-      
+      // During MOVE phase, continuously update position and last position
       updatedPlayers[playerIndex] = {
         ...currentPlayer,
         position: { x, y },
-        // For transition to FREEZE phase, the last recorded position during MOVE is important
+        // Save last position for movement detection in FREEZE phase
         lastPosition: currentPlayer.position
       };
-    } else {
-      // During non-MOVE phases, just update the current position
+    } else if (phase === 'FREEZE') {
+      // During FREEZE, only update current position (for UI feedback)
+      // but preserve lastPosition from end of MOVE phase
       updatedPlayers[playerIndex] = {
         ...currentPlayer,
         position: { x, y }
+      };
+    } else {
+      // During other phases (SETUP, etc.), just update position
+      updatedPlayers[playerIndex] = {
+        ...currentPlayer,
+        position: { x, y },
+        lastPosition: { x, y }  // Keep them in sync
       };
     }
     
@@ -222,13 +279,52 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   checkPlayerMovement: () => {
-    // COMPLETELY DISABLED - No elimination or game over
-    // This ensures the game will continue cycling through phases
+    // Only do movement checking when in FREEZE phase
+    if (get().phase !== 'FREEZE') return;
     
-    // Just print a log so we know it's being called
-    console.log("MOVEMENT CHECK DISABLED: Game will not end");
+    const { players, detectionThreshold } = get();
+    const updatedPlayers = [...players];
+    let anyEliminated = false;
     
-    // Always update the leader board for UI
+    // Check movement for each player
+    updatedPlayers.forEach((player, index) => {
+      if (!player.active || player.eliminated) return;
+      
+      // Calculate movement since freeze started
+      const movement = calculateMovement(player.position, player.lastPosition);
+      
+      // Log movement amount occasionally (every ~20 frames)
+      if (Math.random() < 0.05) {
+        console.log(`Player ${player.id} moved ${movement.toFixed(1)}px (threshold: ${detectionThreshold}px)`);
+      }
+      
+      // Eliminate player if they moved too much
+      if (movement > detectionThreshold) {
+        console.log(`Eliminating player ${player.id} for moving ${movement.toFixed(1)}px (threshold: ${detectionThreshold}px)`);
+        updatedPlayers[index] = {
+          ...player,
+          eliminated: true
+        };
+        anyEliminated = true;
+      }
+    });
+    
+    // Update players state if any were eliminated
+    if (anyEliminated) {
+      set({ 
+        players: updatedPlayers,
+        activePlayers: updatedPlayers.filter(p => p.active && !p.eliminated).length
+      });
+      
+      // Check for game over (one or fewer players remaining)
+      const remainingPlayers = updatedPlayers.filter(p => p.active && !p.eliminated);
+      if (remainingPlayers.length <= 1) {
+        console.log("Game over triggered by eliminations");
+        get().endGame();
+      }
+    }
+    
+    // Always update the leaderboard
     get().determineLeader();
   },
   
@@ -254,7 +350,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     // If only one player remains, end the game
     if (newActivePlayers <= 1) {
-      const winner = updatedPlayers.find(p => p.active)?.id || null;
+      const winner = updatedPlayers.find(p => p.active && !p.eliminated)?.id || null;
       set({ phase: 'GAME_OVER', winner, gameActive: false });
     }
     
@@ -262,72 +358,76 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   startGame: () => {
-    if (get().players.length < 1) return;
+    const { players } = get();
     
-    console.log("Starting game in SIMPLIFIED MODE - no eliminations");
+    if (players.length < 1) {
+      console.log("Can't start game without players");
+      return;
+    }
     
-    // Get the current players with their current positions
-    // This preserves tracked positions from SETUP phase
-    const currentPlayers = get().players;
+    console.log("Starting game");
     
-    const resetPlayers = currentPlayers.map(player => ({
+    // Preserve any positions that were detected during setup
+    // This is key to maintaining tracking during phase transitions
+    const gamePlayers = players.map(player => ({
       ...player,
-      // Keep current positions intact
       score: 0,
       eliminated: false,
-      active: true,
-      // Only reset positions if they're at 0,0
-      position: player.position.x === 0 && player.position.y === 0 
-        ? player.position
-        : player.position,
-      lastPosition: player.position
+      active: true
     }));
     
     // Get phase durations based on current difficulty
     const { move, freeze } = getPhaseDurations(get().difficulty);
     
-    // Always start with the MOVE phase for simplicity
+    // Start in MOVE phase
     set({ 
-      players: resetPlayers,
-      activePlayers: resetPlayers.length,
+      players: gamePlayers,
+      activePlayers: gamePlayers.length,
       winner: null,
       gameActive: true,
-      phase: 'MOVE', // Always start with MOVE phase
+      phase: 'MOVE',
       currentRound: 1,
       timeRemaining: move,
       timerActive: true
     });
     
-    console.log(`Game started in MOVE phase with ${move}ms duration`);
-    console.log(`Players will NOT be eliminated - this is a simplified demo`);
+    console.log(`Game started with ${gamePlayers.length} players in MOVE phase`);
+    console.log(`Movement threshold: ${get().detectionThreshold}px`);
     
     get().determineLeader();
   },
   
   endGame: () => {
+    console.log("Ending game");
+    
+    // Award points to survivors
+    const { players } = get();
+    const updatedPlayers = players.map(player => 
+      player.eliminated ? player : { ...player, score: player.score + 10 }
+    );
+    
     set({
       gameActive: false,
       phase: 'GAME_OVER',
-      timerActive: false
+      timerActive: false,
+      players: updatedPlayers
     });
+    
+    // Determine final winner
+    get().determineLeader();
   },
   
   startRound: () => {
     const { phase } = get();
     
-    // Debug log - simplified for clarity
-    console.log(`Starting new round, previous phase: ${phase}`);
-    
-    // ALWAYS toggle between MOVE and FREEZE phases
-    // If current phase is FREEZE, next should be MOVE and vice versa
-    // If somehow in another phase, default to MOVE
+    // Toggle between MOVE and FREEZE phases
     const newPhase = phase === 'FREEZE' ? 'MOVE' : 'FREEZE';
     
-    // Get the appropriate duration based on the phase and difficulty
+    // Get appropriate duration based on the new phase
     const { move, freeze } = getPhaseDurations(get().difficulty);
     const duration = newPhase === 'MOVE' ? move : freeze;
     
-    console.log(`Transitioning to ${newPhase} phase with ${duration}ms duration`);
+    console.log(`Starting new round in ${newPhase} phase (${duration}ms)`);
     
     set({
       phase: newPhase,
@@ -337,46 +437,48 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   endRound: () => {
-    const { currentRound, phase, players, gameActive } = get();
+    const { phase } = get();
     
-    // Safety check - don't proceed if game isn't active
-    if (!gameActive) return;
+    console.log(`Ending round in ${phase} phase`);
     
-    console.log(`Ending round ${currentRound} in ${phase} phase`);
-    
-    // If in FREEZE phase, check player movement (now disabled)
+    // If in FREEZE phase, check player movement
     if (phase === 'FREEZE') {
       get().checkPlayerMovement();
       
-      // Award points to all players - everyone succeeds
-      const updatedPlayers = players.map(player => {
-        return { ...player, score: player.score + 10 };
+      // Award points to survivors
+      const updatedPlayers = get().players.map(player => {
+        if (player.eliminated) return player;
+        return { ...player, score: player.score + 5 };
       });
       
       set({ players: updatedPlayers });
     }
     
-    // Move to next round - but limit to a reasonable number to prevent infinite loops
-    // We'll cycle rounds from 1-20 indefinitely
-    const nextRound = (currentRound % 20) + 1;
-    console.log(`Setting next round to ${nextRound}`);
+    // Update round counter (cycle between 1-20)
+    const nextRound = (get().currentRound % 20) + 1;
     
     set({ 
       currentRound: nextRound,
       timerActive: false
     });
     
-    // Always determine leader and start next round
-    get().determineLeader();
-    
     // Start the next round immediately
-    console.log("Starting next round immediately");
     get().startRound();
   },
   
   resetGame: () => {
-    const { difficulty } = get();
-    const { move, freeze } = getPhaseDurations(difficulty);
+    console.log("Resetting game");
+    
+    // Keep existing players but reset their state
+    const { players, playerColors } = get();
+    const resetPlayers = players.map(player => ({
+      ...player,
+      score: 0,
+      position: { x: 0, y: 0 },
+      lastPosition: { x: 0, y: 0 },
+      eliminated: false,
+      active: true
+    }));
     
     set({
       phase: 'SETUP',
@@ -385,11 +487,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       timerActive: false,
       winner: null,
       timeRemaining: 0,
-      players: [],
-      activePlayers: 0,
+      players: resetPlayers,
+      activePlayers: resetPlayers.length,
       leadingPlayer: null,
-      moveDuration: move,
-      freezeDuration: freeze
+      // Keep the player colors so they're consistent across games
+      playerColors
     });
   },
   
@@ -398,7 +500,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
   
   updateTimer: () => {
-    const { timerActive, timeRemaining, phase, gameActive } = get();
+    const { timerActive, timeRemaining, gameActive } = get();
     
     // Only update timer if game is active and timer is running
     if (!timerActive || !gameActive) return;
@@ -409,12 +511,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     
     // When timer reaches zero, end the current round
     if (newTime <= 0) {
-      // Immediately stop the timer
+      // Stop the timer immediately
       set({ timerActive: false });
       
-      console.log(`Timer reached zero in ${phase} phase, ending round...`);
-      
-      // End the round immediately
+      // End this round and start the next one
       get().endRound();
     }
   },
@@ -436,11 +536,19 @@ export const useGameStore = create<GameState>((set, get) => ({
   
   updateCustomColor: (r, g, b) => {
     set({ customColorValues: [r, g, b] });
+    console.log(`Updated custom color: RGB(${r}, ${g}, ${b})`);
+  },
+  
+  updatePlayerColor: (id, r, g, b) => {
+    const { playerColors } = get();
     
-    // Update any existing custom players with the new color values
-    const { players } = get();
-    if (players.some(p => p.color === 'custom')) {
-      console.log(`Updated custom color for tracking: R=${r}, G=${g}, B=${b}`);
-    }
+    set({ 
+      playerColors: {
+        ...playerColors,
+        [id]: [r, g, b]
+      }
+    });
+    
+    console.log(`Updated color for player ${id}: RGB(${r}, ${g}, ${b})`);
   }
 }));
