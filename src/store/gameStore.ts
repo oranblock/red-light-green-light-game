@@ -6,6 +6,11 @@ type GamePhase = 'SETUP' | 'MOVE' | 'FREEZE' | 'GAME_OVER';
 // Difficulty levels
 type DifficultyLevel = 'easy' | 'medium' | 'hard' | 'custom';
 
+// Audio elements
+const redLightSound = new Audio('/audio/red-light.mp3');
+const greenLightSound = new Audio('/audio/green-light.mp3'); 
+const afterGreenSound = new Audio('/audio/after-green.mp3');
+
 // Player interface
 export interface Player {
   id: string;
@@ -406,6 +411,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       player.eliminated ? player : { ...player, score: player.score + 10 }
     );
     
+    // Stop all audio when game ends
+    redLightSound.pause();
+    redLightSound.currentTime = 0;
+    greenLightSound.pause();
+    greenLightSound.currentTime = 0;
+    afterGreenSound.pause();
+    afterGreenSound.currentTime = 0;
+    
     set({
       gameActive: false,
       phase: 'GAME_OVER',
@@ -428,6 +441,28 @@ export const useGameStore = create<GameState>((set, get) => ({
     const duration = newPhase === 'MOVE' ? move : freeze;
     
     console.log(`Starting new round in ${newPhase} phase (${duration}ms)`);
+    
+    // Play appropriate sound based on phase transition
+    if (newPhase === 'MOVE') {
+      // Play green light sound
+      greenLightSound.play();
+      
+      // Start playing the after-green sound that continues during the MOVE phase
+      setTimeout(() => {
+        afterGreenSound.play();
+      }, 1000); // Start after a short delay
+    } else {
+      // Stop green light sound if it's still playing
+      greenLightSound.pause();
+      greenLightSound.currentTime = 0;
+      
+      // Stop after-green sound when red light comes
+      afterGreenSound.pause();
+      afterGreenSound.currentTime = 0;
+      
+      // Play red light sound
+      redLightSound.play();
+    }
     
     set({
       phase: newPhase,
@@ -479,6 +514,14 @@ export const useGameStore = create<GameState>((set, get) => ({
       eliminated: false,
       active: true
     }));
+    
+    // Stop all audio when resetting game
+    redLightSound.pause();
+    redLightSound.currentTime = 0;
+    greenLightSound.pause();
+    greenLightSound.currentTime = 0;
+    afterGreenSound.pause();
+    afterGreenSound.currentTime = 0;
     
     set({
       phase: 'SETUP',

@@ -1,16 +1,17 @@
 # Red Light, Green Light Game
 
-A browser-based implementation of the classic "Red Light, Green Light" game using React, TypeScript, and webcam-based motion detection.
+A browser-based implementation of the classic "Red Light, Green Light" game using React, TypeScript, and webcam-based motion detection with audio cues.
 
-![Red Light, Green Light Game](https://github.com/oranblock/red-light-green-light-game/raw/main/public/game-screenshot.png)
+![Game Screenshot](/public/game-screenshot.png)
 
 ## Overview
 
-This web application brings the popular children's game "Red Light, Green Light" to your browser with real-time motion detection. Players must freeze when the light is red and can only move when the light is green. The game uses your device's camera to track colored objects (like colored shirts or objects) and detect movement.
+This web application brings the popular children's game "Red Light, Green Light" to your browser with real-time motion detection. Players must freeze when the light is red and can only move when the light is green. The game uses your device's camera to track colored objects (like colored shirts or objects) and detect movement, along with audio cues for each phase.
 
 ## Features
 
 - **Camera-Based Motion Detection**: Track players using colored objects
+- **Audio Cues**: Sound effects for "Green Light", "Red Light", and background audio
 - **Multi-Player Support**: Track up to 4 different colored objects simultaneously
 - **Custom Color Tracking**: Calibrate the game to track any color
 - **Adjustable Difficulty Levels**: Easy, Medium, and Hard modes with different sensitivities
@@ -26,6 +27,7 @@ This web application brings the popular children's game "Red Light, Green Light"
 - Tailwind CSS (for styling)
 - HTML5 Canvas API (for motion detection)
 - MediaDevices API (for camera access)
+- Web Audio API (for sound effects)
 
 ## How to Play
 
@@ -34,8 +36,8 @@ This web application brings the popular children's game "Red Light, Green Light"
 3. **Select Difficulty**: Choose Easy, Medium, or Hard
 4. **Start Game**: Click "Start Game" to begin
 5. **Gameplay**:
-   - When "MOVE" appears with a green border, players can move freely
-   - When "FREEZE" appears with a red border, players must remain still
+   - When "MOVE" appears with a green border and you hear "Green Light", players can move freely
+   - When "FREEZE" appears with a red border and you hear "Red Light", players must remain still
    - Players who move during "FREEZE" will be eliminated
 6. **Winning**: The last player remaining wins!
 
@@ -50,7 +52,7 @@ This web application brings the popular children's game "Red Light, Green Light"
 
 1. Clone the repository:
    ```
-   git clone https://github.com/oranblock/red-light-green-light-game.git
+   git clone https://github.com/yourusername/red-light-green-light.git
    cd red-light-green-light
    ```
 
@@ -85,6 +87,7 @@ The game offers several configuration options in the settings menu:
 - **Phase Duration**: Adjust how long each phase lasts
 - **Movement Threshold**: Set sensitivity for motion detection
 - **Camera Selection**: Choose between front/back cameras
+- **Audio**: Enable/disable game sounds (coming soon)
 
 ## Implementation Details
 
@@ -104,6 +107,20 @@ During "FREEZE" phases, the game detects motion by:
 2. Calculating the Euclidean distance between these positions
 3. Comparing the distance against a threshold (based on difficulty level)
 4. Eliminating players who exceed the movement threshold
+
+### Audio Implementation
+
+The game includes three audio elements:
+1. "Green Light" sound - Plays when the MOVE phase begins
+2. "After Green" ambient sound - Plays during the MOVE phase
+3. "Red Light" sound - Plays when the FREEZE phase begins
+
+## Upcoming Features
+
+- **Improved Color Capture**: Enhanced color detection for better player tracking
+- **Additional Sound Effects**: More audio cues for different game events
+- **Customizable Audio**: Volume controls and ability to mute specific sounds
+- **Mobile Optimization**: Better experience on mobile devices
 
 ## Browser Compatibility
 
