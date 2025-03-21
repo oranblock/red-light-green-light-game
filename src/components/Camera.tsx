@@ -114,8 +114,8 @@ export function Camera() {
           const playerColor = playerColors[player.id];
           if (!playerColor) continue;
           
-          // Find the position of this color in the frame
-          const position = findColorPosition(currentFrame, playerColor);
+          // Find the position of this color in the frame (with player ID for tracking)
+          const position = findColorPosition(currentFrame, playerColor, player.id);
           
           if (position) {
             // Update player positions in the store
@@ -164,10 +164,14 @@ export function Camera() {
     playerColors
   ]);
   
+  // Track previous positions for position smoothing
+  const prevPositions = useRef<Record<string, {x: number, y: number}>>({});
+  
   // Find a specific color in the frame
   const findColorPosition = (
     imageData: ImageData, 
-    targetColor: [number, number, number]
+    targetColor: [number, number, number],
+    playerId: string
   ): { x: number, y: number } | null => {
     const width = imageData.width;
     const height = imageData.height;
@@ -179,8 +183,8 @@ export function Camera() {
     // Extract target color components
     const [targetR, targetG, targetB] = targetColor;
     
-    // Color threshold - how close a pixel needs to be to match
-    const colorThreshold = 60;
+    // Color threshold - how close a pixel needs to be to match (stricter now)
+    const colorThreshold = 50; // Reduced from 60 for stricter matching
     
     // Sample every Nth pixel for better performance
     const sampleStep = 6;
@@ -192,43 +196,112 @@ export function Camera() {
     const isTargetWhite = targetR > 220 && targetG > 220 && targetB > 220;
     const isTargetGreen = targetG > 150 && targetG > (targetR * 1.4) && targetG > (targetB * 1.4);
     
-    // Scan the entire frame for matching colors
-    for (let y = 0; y < height; y += sampleStep) {
-      for (let x = 0; x < width; x += sampleStep) {
-        const i = (y * width + x) * 4;
-        const r = data[i];
-        const g = data[i + 1];
-        const b = data[i + 2];
-        
-        // Skip very dark pixels (likely background)
-        const brightness = r + g + b;
-        if (brightness < 80 && !isTargetColorBright) continue;
-        
-        // Skip white/light colors if we're not looking for white
-        if (!isTargetWhite && r > 220 && g > 220 && b > 220) continue;
-        
-        // Skip green colors if we're not looking for green
-        if (!isTargetGreen && g > 150 && g > (r * 1.4) && g > (b * 1.4)) continue;
-        
-        // Calculate color difference using Euclidean distance
-        const diffR = r - targetR;
-        const diffG = g - targetG;
-        const diffB = b - targetB;
-        
-        // Use different channel weights to better match human perception
-        const distance = Math.sqrt(
-          (diffR * diffR * 0.3) + 
-          (diffG * diffG * 0.4) + 
-          (diffB * diffB * 0.3)
-        );
-        
-        // Calculate match quality (0-1)
-        if (distance < colorThreshold) {
-          // Use a weight based on how close the match is
-          const weight = 1.0 - (distance / colorThreshold);
+    // Get previous position for this player (if exists)
+    const prevPosition = prevPositions.current[playerId];
+    
+    // Search radius - if we have a previous position, focus search around it first
+    const searchRadius = 100; // pixels around previous position
+    let foundInPrevRegion = false;
+    
+    // If we have a previous position, try looking there first with a tighter search
+    if (prevPosition) {
+      const searchArea = {
+        minX: Math.max(0, prevPosition.x - searchRadius),
+        maxX: Math.min(width - 1, prevPosition.x + searchRadius),
+        minY: Math.max(0, prevPosition.y - searchRadius),
+        maxY: Math.min(height - 1, prevPosition.y + searchRadius)
+      };
+      
+      // Search just the region around previous position first
+      for (let y = searchArea.minY; y < searchArea.maxY; y += sampleStep) {
+        for (let x = searchArea.minX; x < searchArea.maxX; x += sampleStep) {
+          const i = (y * width + x) * 4;
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
           
-          // Store this as a potential color match
-          colorMatches.push({ x, y, weight });
+          // Skip very dark pixels (likely background)
+          const brightness = r + g + b;
+          if (brightness < 80 && !isTargetColorBright) continue;
+          
+          // Skip white/light colors if we're not looking for white
+          if (!isTargetWhite && r > 220 && g > 220 && b > 220) continue;
+          
+          // Skip green colors if we're not looking for green
+          if (!isTargetGreen && g > 150 && g > (r * 1.4) && g > (b * 1.4)) continue;
+          
+          // Calculate color difference using Euclidean distance
+          const diffR = r - targetR;
+          const diffG = g - targetG;
+          const diffB = b - targetB;
+          
+          // Use different channel weights to better match human perception
+          const distance = Math.sqrt(
+            (diffR * diffR * 0.3) + 
+            (diffG * diffG * 0.4) + 
+            (diffB * diffB * 0.3)
+          );
+          
+          // Calculate match quality (0-1)
+          if (distance < colorThreshold) {
+            // Use a weight based on how close the match is
+            const weight = 1.0 - (distance / colorThreshold);
+            
+            // Prioritize matches that are close to previous position
+            const proximityBonus = 1.5; // Increase weight of matches near previous position
+            
+            // Store this as a potential color match with proximity bonus
+            colorMatches.push({ 
+              x, 
+              y, 
+              weight: weight * proximityBonus
+            });
+            foundInPrevRegion = true;
+          }
+        }
+      }
+    }
+    
+    // Only search the full frame if we didn't find enough matches in the previous region
+    if (!foundInPrevRegion) {
+      // Scan the entire frame for matching colors
+      for (let y = 0; y < height; y += sampleStep) {
+        for (let x = 0; x < width; x += sampleStep) {
+          const i = (y * width + x) * 4;
+          const r = data[i];
+          const g = data[i + 1];
+          const b = data[i + 2];
+          
+          // Skip very dark pixels (likely background)
+          const brightness = r + g + b;
+          if (brightness < 80 && !isTargetColorBright) continue;
+          
+          // Skip white/light colors if we're not looking for white
+          if (!isTargetWhite && r > 220 && g > 220 && b > 220) continue;
+          
+          // Skip green colors if we're not looking for green
+          if (!isTargetGreen && g > 150 && g > (r * 1.4) && g > (b * 1.4)) continue;
+          
+          // Calculate color difference using Euclidean distance
+          const diffR = r - targetR;
+          const diffG = g - targetG;
+          const diffB = b - targetB;
+          
+          // Use different channel weights to better match human perception
+          const distance = Math.sqrt(
+            (diffR * diffR * 0.3) + 
+            (diffG * diffG * 0.4) + 
+            (diffB * diffB * 0.3)
+          );
+          
+          // Calculate match quality (0-1)
+          if (distance < colorThreshold) {
+            // Use a weight based on how close the match is
+            const weight = 1.0 - (distance / colorThreshold);
+            
+            // Store this as a potential color match
+            colorMatches.push({ x, y, weight });
+          }
         }
       }
     }
@@ -290,11 +363,51 @@ export function Camera() {
           (b.count * b.totalWeight) - (a.count * a.totalWeight)
         );
         
-        // Return the center of the best cluster
-        return {
+        // Get the best cluster center
+        const bestCluster = {
           x: clusters[0].x,
           y: clusters[0].y
         };
+        
+        // Apply position smoothing if we have a previous position
+        if (prevPosition) {
+          // Calculate how much to smooth movement (0-1)
+          // Lower values = smoother but slower response
+          // Higher values = faster response but more jitter
+          const smoothingFactor = 0.25; 
+          
+          // Smooth the position by blending previous and current
+          const smoothedPosition = {
+            x: prevPosition.x + (bestCluster.x - prevPosition.x) * smoothingFactor,
+            y: prevPosition.y + (bestCluster.y - prevPosition.y) * smoothingFactor
+          };
+          
+          // Check for unreasonable jumps (more than 150px in one frame)
+          const jumpDistance = Math.sqrt(
+            Math.pow(smoothedPosition.x - prevPosition.x, 2) + 
+            Math.pow(smoothedPosition.y - prevPosition.y, 2)
+          );
+          
+          if (jumpDistance > 150) {
+            // Ignore this detection - it's likely wrong
+            // Just return the previous position with very slight movement
+            // This prevents the tracking from jumping around
+            const tinyStep = 0.05;
+            prevPositions.current[playerId] = {
+              x: prevPosition.x + (bestCluster.x - prevPosition.x) * tinyStep,
+              y: prevPosition.y + (bestCluster.y - prevPosition.y) * tinyStep
+            };
+            return prevPositions.current[playerId];
+          }
+          
+          // Save the smoothed position for next frame
+          prevPositions.current[playerId] = smoothedPosition;
+          return smoothedPosition;
+        }
+        
+        // For first detection, just use the cluster center
+        prevPositions.current[playerId] = bestCluster;
+        return bestCluster;
       }
     }
     
@@ -312,13 +425,54 @@ export function Camera() {
       
       // Guard against division by zero
       if (totalWeight > 0) {
-        return {
+        const averagePosition = {
           x: totalX / totalWeight,
           y: totalY / totalWeight
         };
+        
+        // Apply position smoothing if we have a previous position
+        if (prevPosition) {
+          // Stronger smoothing for fallback method
+          const smoothingFactor = 0.2; 
+          
+          // Smooth the position by blending previous and current
+          const smoothedPosition = {
+            x: prevPosition.x + (averagePosition.x - prevPosition.x) * smoothingFactor,
+            y: prevPosition.y + (averagePosition.y - prevPosition.y) * smoothingFactor
+          };
+          
+          // Check for unreasonable jumps (more than 100px in one frame)
+          const jumpDistance = Math.sqrt(
+            Math.pow(smoothedPosition.x - prevPosition.x, 2) + 
+            Math.pow(smoothedPosition.y - prevPosition.y, 2)
+          );
+          
+          if (jumpDistance > 100) {
+            // Ignore this detection - it's likely wrong
+            return prevPosition;
+          }
+          
+          // Save the smoothed position for next frame
+          prevPositions.current[playerId] = smoothedPosition;
+          return smoothedPosition;
+        }
+        
+        // First detection with fallback method
+        prevPositions.current[playerId] = averagePosition;
+        return averagePosition;
+      }
+      
+      // If we had a previous position but no good detection, return previous
+      if (prevPosition) {
+        return prevPosition;
       }
       
       return null;
+    }
+    
+    // If we had a previous position but no matches at all, return previous
+    if (prevPosition) {
+      return prevPosition;
     }
     
     return null;
