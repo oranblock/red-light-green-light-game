@@ -50,8 +50,8 @@ export function GameUI() {
   };
 
   return (
-    <div className="absolute top-0 left-0 right-0 p-4">
-      <div className="flex justify-between items-center">
+    <div className={`fixed top-0 left-0 right-0 bottom-0 w-full h-full ${gameActive ? 'z-50' : ''}`}>
+      <div className="flex justify-between items-center p-4">
         {/* Timer and phase display */}
         <div className="bg-white/90 rounded-lg p-3 shadow-lg text-black">
           <div className="flex items-center gap-2">
@@ -129,7 +129,7 @@ export function GameUI() {
       {/* Phase announcements */}
       {phase === 'FREEZE' && gameActive && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <div className="text-5xl font-bold text-red-500 animate-pulse drop-shadow-lg">
+          <div className="text-8xl font-bold text-red-500 animate-pulse drop-shadow-lg">
             FREEZE!
           </div>
         </div>
@@ -137,7 +137,7 @@ export function GameUI() {
 
       {phase === 'MOVE' && gameActive && (
         <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-          <div className="text-5xl font-bold text-green-500 animate-pulse drop-shadow-lg">
+          <div className="text-8xl font-bold text-green-500 animate-pulse drop-shadow-lg">
             MOVE!
           </div>
         </div>
@@ -145,19 +145,19 @@ export function GameUI() {
       
       {/* Game over announcement */}
       {phase === 'GAME_OVER' && (
-        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center">
-          <div className="text-4xl font-bold text-white mb-4">
+        <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
+          <div className="text-6xl font-bold text-white mb-6 animate-pulse">
             GAME OVER
           </div>
           
           {winner && (
-            <div className="bg-white/90 rounded-lg p-4 shadow-lg">
+            <div className="bg-white/90 rounded-lg p-6 shadow-xl">
               <div className="text-center">
-                <Trophy className="w-12 h-12 text-yellow-500 mx-auto mb-2" />
-                <div className="text-2xl font-bold text-black">
+                <Trophy className="w-20 h-20 text-yellow-500 mx-auto mb-4" />
+                <div className="text-4xl font-bold text-black">
                   {getPlayerColorName(winner)} Wins!
                 </div>
-                <div className="text-sm text-gray-600 mt-1">
+                <div className="text-xl text-gray-600 mt-2">
                   Score: {players.find(p => p.id === winner)?.score || 0}
                 </div>
               </div>
@@ -168,43 +168,47 @@ export function GameUI() {
       
       {/* Setup instructions */}
       {phase === 'SETUP' && (
-        <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-white">
-          <div className="max-w-md mx-auto p-6 bg-white/10 backdrop-blur-sm rounded-lg">
-            <h2 className="text-2xl font-bold mb-4 text-center">Players Setup</h2>
+        <div className="fixed inset-0 bg-black/80 flex flex-col items-center justify-center text-white z-50">
+          <div className="max-w-xl mx-auto p-8 bg-white/10 backdrop-blur-lg rounded-xl shadow-2xl">
+            <h2 className="text-3xl font-bold mb-6 text-center">Players Setup</h2>
             
-            <div className="flex justify-center gap-4 mb-6">
+            <div className="flex justify-center gap-6 mb-8">
               {['red', 'green', 'blue', 'yellow', 'custom'].map(color => (
                 <button
                   key={color}
                   className={cn(
-                    "w-12 h-12 rounded-full",
+                    "w-16 h-16 rounded-full shadow-lg transition-all transform hover:scale-110",
                     color !== 'custom' ? `bg-${color}-500` : "bg-purple-500",
-                    players.some(p => p.color === color) && "ring-2 ring-white"
+                    players.some(p => p.color === color) && "ring-4 ring-white"
                   )}
                   style={{ backgroundColor: color !== 'custom' ? color : 'purple' }}
-                  onClick={() => useGameStore.getState().addPlayer(color as any)}
+                  onClick={() => useGameStore.getState().addPlayer(color)}
                 >
                   {players.some(p => p.color === color) && (
-                    <User className="w-6 h-6 text-white mx-auto" />
+                    <User className="w-8 h-8 text-white mx-auto" />
                   )}
                   {color === 'custom' && !players.some(p => p.color === color) && (
-                    <span className="text-xs text-white font-bold">+</span>
+                    <span className="text-lg text-white font-bold">+</span>
                   )}
                 </button>
               ))}
             </div>
             
-            <div className="mb-6">
-              <p className="text-center mb-2">Difficulty</p>
-              <div className="flex justify-center gap-2">
+            <div className="mb-8">
+              <p className="text-center text-xl mb-4">Select Difficulty</p>
+              <div className="flex justify-center gap-4">
                 {['easy', 'medium', 'hard'].map(level => (
                   <button
                     key={level}
                     className={cn(
-                      "px-3 py-1 rounded",
-                      level === difficulty ? "bg-white text-black" : "bg-black/30"
+                      "px-6 py-3 rounded-xl font-bold text-lg transition-all transform hover:scale-105",
+                      level === difficulty 
+                        ? level === 'easy' ? "bg-green-500 text-white shadow-lg" 
+                        : level === 'medium' ? "bg-yellow-500 text-white shadow-lg"
+                        : "bg-red-500 text-white shadow-lg"
+                        : "bg-black/30 hover:bg-black/50"
                     )}
-                    onClick={() => useGameStore.getState().setDifficulty(level as any)}
+                    onClick={() => useGameStore.getState().setDifficulty(level as 'easy' | 'medium' | 'hard' | 'custom')}
                   >
                     {difficultyLabels[level as keyof typeof difficultyLabels]}
                   </button>
@@ -215,9 +219,9 @@ export function GameUI() {
             <div className="flex justify-center">
               <button
                 className={cn(
-                  "px-8 py-3 rounded-lg font-bold text-lg",
+                  "px-12 py-4 rounded-xl font-bold text-2xl shadow-lg transition-all transform hover:scale-105",
                   players.length > 0
-                    ? "bg-green-500 hover:bg-green-600"
+                    ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
                     : "bg-gray-500 cursor-not-allowed"
                 )}
                 disabled={players.length === 0}

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Camera } from './components/Camera';
 import { useGameStore } from './store/gameStore';
 
@@ -9,17 +9,17 @@ function App() {
     gameActive, 
     players, 
     timeRemaining,
-    difficulty,
-    detectionThreshold,
-    customColorValues,
+    // difficulty, - unused but kept for reference
+    // detectionThreshold, - unused but kept for reference
+    // customColorValues, - unused but kept for reference
     playerColors,
     cameraReady,
-    setCameraReady,
+    // setCameraReady, - unused but kept for reference
     addPlayer, 
     removePlayer,
     startGame,
     resetGame,
-    updateCustomColor,
+    // updateCustomColor, - unused but kept for reference
     updateTimer,
     setDifficulty,
     setDetectionThreshold,
@@ -29,8 +29,10 @@ function App() {
   // Local state for UI
   const [debugLogs, setDebugLogs] = useState<Array<{timestamp: number, message: string, type: string}>>([]);
   const [showSettings, setShowSettings] = useState(false);
-  const [captureMode, setCaptureMode] = useState(false);
-  const [capturePoint, setCapturePoint] = useState<{x: number, y: number} | null>(null);
+  // These state values were used in previous versions of the app
+  // Now handled in the Camera component
+  // const [captureMode, setCaptureMode] = useState(false);
+  // const [capturePoint, setCapturePoint] = useState<{x: number, y: number} | null>(null);
   const [newPlayerColor, setNewPlayerColor] = useState<[number, number, number]>([200, 50, 50]);
   
   // Settings state that should persist throughout gameplay
@@ -46,7 +48,7 @@ function App() {
   });
   
   // Add a debug log
-  const addLog = (message: string, type: 'info' | 'warning' | 'error' = 'info') => {
+  const addLog = React.useCallback((message: string, type: 'info' | 'warning' | 'error' = 'info') => {
     if (settings.debugMode) {
       setDebugLogs(prev => [
         { timestamp: Date.now(), message, type },
@@ -54,7 +56,7 @@ function App() {
       ]);
       console.log(`[${type.toUpperCase()}] ${message}`);
     }
-  };
+  }, [settings.debugMode, setDebugLogs]);
   
   // Generate a random RGB color that's easy to track
   const generateRandomColor = (): [number, number, number] => {
@@ -71,7 +73,7 @@ function App() {
   };
   
   // Shuffle array (Fisher-Yates algorithm)
-  const shuffle = (array: any[]) => {
+  const shuffle = <T,>(array: T[]): T[] => {
     const newArray = [...array];
     for (let i = newArray.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -86,11 +88,11 @@ function App() {
     addLog("Game setup started");
   };
   
-  // Go to main menu
-  const goToMenu = () => {
-    resetGame();
-    addLog("Returned to main menu");
-  };
+  // Keep this function for future use
+  // const goToMenu = () => {
+  //   resetGame();
+  //   addLog("Returned to main menu");
+  // };
   
   // Add a new player with custom color
   const addNewPlayer = () => {
@@ -109,7 +111,7 @@ function App() {
     // Update the movement threshold in the store
     setDetectionThreshold(settings.movementThreshold);
     addLog(`Movement threshold set to ${settings.movementThreshold}px`);
-  }, [settings.movementThreshold, setDetectionThreshold]);
+  }, [settings.movementThreshold, setDetectionThreshold, addLog]);
   
   // Apply settings changes
   useEffect(() => {
@@ -120,7 +122,7 @@ function App() {
     }
     
     addLog(`Settings updated: camera=${settings.enableCamera}, tracking=${settings.enableColorTracking}`);
-  }, [settings]);
+  }, [settings, addLog]);
   
   // Timer effect for game phases
   useEffect(() => {
@@ -492,56 +494,55 @@ function App() {
         
         {/* Active game - Always render Camera component */}
         {(phase === 'MOVE' || phase === 'FREEZE') && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-6">
-            <div className="mb-4 flex justify-between items-center">
-              <h2 className="text-xl">Game Active</h2>
+          <div className="fixed inset-0 z-40 bg-black flex flex-col justify-center items-center">
+            <div className="absolute top-0 left-0 right-0 flex justify-between items-center p-4 z-30">
+              <h2 className="text-xl bg-black/50 p-2 rounded-lg">Game Active</h2>
               <div>
-                <span className="text-gray-300">Players: {players.filter(p => !p.eliminated).length}/{players.length}</span>
+                <span className="text-gray-300 bg-black/50 p-2 rounded-lg">Players: {players.filter(p => !p.eliminated).length}/{players.length}</span>
               </div>
             </div>
             
-            {/* Camera view - always show it */}
-            <div className="relative mb-6">
-              <div className={`relative border-4 ${phase === 'MOVE' ? 'border-green-500' : 'border-red-500'} rounded-lg overflow-hidden`}>
+            {/* Camera view - fullscreen */}
+            <div className="w-full h-full flex items-center justify-center">
+              <div className={`w-full h-full max-w-screen max-h-screen relative border-8 ${phase === 'MOVE' ? 'border-green-500' : 'border-red-500'} overflow-hidden`}>
                 {/* Camera component is maintained throughout all phases */}
                 <Camera />
                 
                 {/* Phase indicator */}
-                <div className="absolute top-2 left-0 right-0 text-center">
-                  <div className={`inline-block px-4 py-1 rounded font-bold ${phase === 'MOVE' ? 'bg-green-500' : 'bg-red-500'}`}>
+                <div className="absolute top-16 left-0 right-0 text-center">
+                  <div className={`inline-block px-6 py-2 rounded-full font-bold text-xl ${phase === 'MOVE' ? 'bg-green-500' : 'bg-red-500'}`}>
                     {phase === 'MOVE' ? 'MOVE!' : 'FREEZE!'}
                   </div>
                 </div>
                 
                 {/* Movement threshold indicator */}
-                <div className="absolute bottom-2 right-2">
-                  <div className="bg-black/70 px-2 py-1 rounded text-xs">
+                <div className="absolute bottom-4 right-4">
+                  <div className="bg-black/80 px-3 py-2 rounded-full text-sm font-bold">
                     Movement: {settings.movementThreshold}px
                   </div>
                 </div>
               </div>
             </div>
             
-            {/* Player status */}
-            <div className="mb-6">
-              <h3 className="text-center mb-2">Player Status</h3>
+            {/* Player status - position at the bottom of the screen */}
+            <div className="fixed bottom-4 left-0 right-0 z-30">
               <div className="flex flex-wrap justify-center gap-3">
                 {players.map(player => {
                   const playerColor = playerColors[player.id] || [0, 0, 0];
                   return (
                     <div 
                       key={player.id}
-                      className={`px-3 py-2 rounded ${player.eliminated ? 'bg-gray-700' : 'bg-gray-600'}`}
+                      className={`px-4 py-2 rounded-full shadow-lg ${player.eliminated ? 'bg-black/70' : 'bg-black/50'}`}
                     >
                       <div className="flex items-center gap-2">
                         <div 
-                          className="w-4 h-4 rounded-full"
+                          className="w-5 h-5 rounded-full"
                           style={{ 
                             backgroundColor: `rgb(${playerColor[0]}, ${playerColor[1]}, ${playerColor[2]})` 
                           }}
                         />
                         <span>{player.id}</span>
-                        {player.eliminated && <span className="text-red-500">✗</span>}
+                        {player.eliminated && <span className="text-red-500 font-bold">✗</span>}
                       </div>
                     </div>
                   );
@@ -549,9 +550,9 @@ function App() {
               </div>
             </div>
             
-            <div className="flex justify-center">
+            <div className="absolute top-20 right-4 z-30">
               <button
-                className="px-6 py-3 bg-red-500 hover:bg-red-600 rounded-lg font-bold"
+                className="px-4 py-2 bg-red-500 hover:bg-red-600 rounded-full shadow-lg font-bold"
                 onClick={resetGame}
               >
                 Reset Game
@@ -560,54 +561,56 @@ function App() {
           </div>
         )}
         
-        {/* Game over - still keep camera for player reference */}
+        {/* Game over - fullscreen with camera background */}
         {phase === 'GAME_OVER' && (
-          <div className="bg-gray-800 rounded-lg p-6 mb-6">
-            <h2 className="text-2xl font-bold text-center mb-6">Game Over</h2>
-            
+          <div className="fixed inset-0 z-40 bg-black flex flex-col justify-center items-center">
             {/* Show camera in game over state too */}
-            <div className="relative mb-6">
+            <div className="absolute inset-0 opacity-40">
               <Camera />
             </div>
             
-            {/* Winners */}
-            <div className="mb-6">
-              {players.some(p => !p.eliminated) ? (
-                <div className="text-center">
-                  <h3 className="text-xl mb-4">Winners</h3>
-                  <div className="flex justify-center gap-4">
-                    {players.filter(p => !p.eliminated).map(player => {
-                      const playerColor = playerColors[player.id] || [0, 0, 0];
-                      return (
-                        <div 
-                          key={player.id}
-                          className="p-4 bg-gray-700 rounded-lg text-center"
-                        >
+            <div className="relative z-10 w-full max-w-2xl mx-auto">
+              <h2 className="text-4xl font-bold text-center mb-8 text-white animate-pulse">Game Over</h2>
+              
+              {/* Winners */}
+              <div className="mb-8">
+                {players.some(p => !p.eliminated) ? (
+                  <div className="text-center">
+                    <h3 className="text-2xl mb-6 text-white">Winners</h3>
+                    <div className="flex justify-center gap-6">
+                      {players.filter(p => !p.eliminated).map(player => {
+                        const playerColor = playerColors[player.id] || [0, 0, 0];
+                        return (
                           <div 
-                            className="w-12 h-12 rounded-full mx-auto mb-2"
-                            style={{ 
-                              backgroundColor: `rgb(${playerColor[0]}, ${playerColor[1]}, ${playerColor[2]})` 
-                            }}
-                          />
-                          <div className="text-lg font-bold">{player.id}</div>
-                          <div className="text-sm text-gray-300">Score: {player.score}</div>
-                        </div>
-                      );
-                    })}
+                            key={player.id}
+                            className="p-6 bg-gray-800/90 rounded-xl text-center shadow-2xl backdrop-blur-sm"
+                          >
+                            <div 
+                              className="w-20 h-20 rounded-full mx-auto mb-4 shadow-lg"
+                              style={{ 
+                                backgroundColor: `rgb(${playerColor[0]}, ${playerColor[1]}, ${playerColor[2]})` 
+                              }}
+                            />
+                            <div className="text-xl font-bold">{player.id}</div>
+                            <div className="text-lg text-white mt-2">Score: {player.score}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="text-center text-xl mb-6">No players survived!</div>
-              )}
-            </div>
-            
-            <div className="flex justify-center gap-4">
-              <button
-                className="px-6 py-3 bg-blue-500 hover:bg-blue-600 rounded-lg font-bold"
-                onClick={goToSetup}
-              >
-                Play Again
-              </button>
+                ) : (
+                  <div className="text-center text-2xl mb-8 text-white p-6 bg-black/70 rounded-xl">No players survived!</div>
+                )}
+              </div>
+              
+              <div className="flex justify-center gap-4">
+                <button
+                  className="px-8 py-4 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 rounded-xl font-bold text-xl shadow-xl transition-all transform hover:scale-105"
+                  onClick={goToSetup}
+                >
+                  Play Again
+                </button>
+              </div>
             </div>
           </div>
         )}

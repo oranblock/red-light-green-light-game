@@ -79,10 +79,10 @@ interface GameState {
   updatePlayerColor: (id: string, r: number, g: number, b: number) => void;
 }
 
-// Generate a unique ID
-const generateId = (): string => {
-  return Math.random().toString(36).substring(2, 9);
-};
+// Generate a unique ID - Kept for future use
+// const generateId = (): string => {
+//   return Math.random().toString(36).substring(2, 9);
+// };
 
 // Calculate movement between positions
 const calculateMovement = (
@@ -382,7 +382,8 @@ export const useGameStore = create<GameState>((set, get) => ({
     }));
     
     // Get phase durations based on current difficulty
-    const { move, freeze } = getPhaseDurations(get().difficulty);
+    const { move } = getPhaseDurations(get().difficulty);
+    // freeze duration is not used in this context
     
     // Start in MOVE phase
     set({ 

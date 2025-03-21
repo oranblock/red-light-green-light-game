@@ -80,7 +80,8 @@ export function detectPlayerColor(
   let totalY = 0;
   
   // Get the specific color range based on the player color
-  const [redRange, greenRange, blueRange] = colorRange[playerColor];
+  // (we don't use these values directly in the predefined colors case)
+  // const [redRange, greenRange, blueRange] = colorRange[playerColor];
   
   // Sample every Nth pixel for better performance
   const sampleStep = 8;
@@ -126,7 +127,7 @@ export function detectPlayerColor(
           // Looking for high red+green, low blue
           isMatch = (r > 150) && (g > 150) && (b < 100);
           break;
-        case 'custom':
+        case 'custom': {
           // For custom color, calculate HSV-like color similarity
           // This is more robust than simple RGB distance
           
@@ -140,6 +141,7 @@ export function detectPlayerColor(
           // Consider a match if the color is within a certain threshold
           isMatch = colorDiff < colorThreshold;
           break;
+        }
       }
       
       if (isMatch) {
@@ -159,10 +161,13 @@ export function detectPlayerColor(
       console.log(`Detected ${playerColor} color: ${matchingPixels} matching pixels`);
     }
     
-    return {
-      x: totalX / matchingPixels,
-      y: totalY / matchingPixels
-    };
+    // Guard against division by zero
+    if (matchingPixels > 0) {
+      return {
+        x: totalX / matchingPixels,
+        y: totalY / matchingPixels
+      };
+    }
   }
   
   return null;
@@ -219,9 +224,10 @@ export function captureColorAt(
   }
   
   // Calculate averages
-  const avgR = Math.round(totalR / samplesCount);
-  const avgG = Math.round(totalG / samplesCount);
-  const avgB = Math.round(totalB / samplesCount);
+  // Guard against division by zero
+  const avgR = samplesCount > 0 ? Math.round(totalR / samplesCount) : 0;
+  const avgG = samplesCount > 0 ? Math.round(totalG / samplesCount) : 0;
+  const avgB = samplesCount > 0 ? Math.round(totalB / samplesCount) : 0;
   
   console.log(`Captured color: R=${avgR}, G=${avgG}, B=${avgB}`);
   
